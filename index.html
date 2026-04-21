@@ -314,15 +314,25 @@
         console.log("YouTube API Ready");
     }
 
-    // Main function to play a video using the API
+        // Main function to play a video using the API
     function playVideo(id, index = -1) {
         videoWrapper.style.display = "block";
         currentPlayingIndex = index;
         renderLibrary(); // Re-render to highlight the active track
 
         if (ytPlayer) {
-            // Player exists, just load the new video
-            ytPlayer.loadVideoById(id);
+            if (index !== -1 && savedVideos.length > 0) {
+                // NEW: Use YouTube's Native Playlist feature!
+                // We feed all IDs to YouTube at once so it survives background sleep.
+                const allIds = savedVideos.map(v => v.id);
+                ytPlayer.loadPlaylist({
+                    playlist: allIds,
+                    index: index
+                });
+                ytPlayer.setLoop(true); // Loop the whole playlist automatically
+            } else {
+                ytPlayer.loadVideoById(id);
+            }
         } else {
             // Create a new player
             ytPlayer = new YT.Player('ytplayer', {
@@ -331,10 +341,21 @@
                 videoId: id,
                 playerVars: { 
                     'autoplay': 1, 
-                    'playsinline': 1, // Helps with mobile playback
+                    'playsinline': 1, 
                     'rel': 0 
                 },
                 events: {
+                    'onReady': (event) => {
+                        // If starting from the library on the very first load
+                        if (index !== -1 && savedVideos.length > 0) {
+                            const allIds = savedVideos.map(v => v.id);
+                            event.target.loadPlaylist({
+                                playlist: allIds,
+                                index: index
+                            });
+                            event.target.setLoop(true);
+                        }
+                    },
                     'onStateChange': onPlayerStateChange
                 }
             });
@@ -342,32 +363,34 @@
         notify("Loading video...", "var(--text-main)");
     }
 
-               // Detect when a video finishes to trigger Replay or Autoplay
+    // Detect state changes
     function onPlayerStateChange(event) {
+        // NEW: Sync our UI when YouTube natively moves to the next song in the background
+        if (event.data === YT.PlayerState.PLAYING && currentPlayingIndex !== -1) {
+            const realIndex = ytPlayer.getPlaylistIndex();
+            // Update our UI if the index changed natively
+            if (realIndex !== -1 && realIndex !== currentPlayingIndex) {
+                currentPlayingIndex = realIndex;
+                renderLibrary(); // Moves the purple highlight to the new song
+            }
+        }
+
         if (event.data === YT.PlayerState.ENDED) {
-            // Check if we are playing from the library
             if (currentPlayingIndex !== -1 && savedVideos.length > 0) {
                 const currentVideo = savedVideos[currentPlayingIndex];
                 
                 if (currentVideo.isLooping) {
-                    // Feature 1: Replay Repeatedly (Forces reload)
+                    // Feature 1: Replay Repeatedly (Still requires JS, might pause if asleep)
                     setTimeout(() => {
                         ytPlayer.loadVideoById(currentVideo.id);
                     }, 150);
-                } else {
-                    // Feature 2: Autoplay Next (ONLY if there is more than 1 video)
-                    if (savedVideos.length > 1) {
-                        let nextIndex = currentPlayingIndex + 1;
-                        if (nextIndex >= savedVideos.length) {
-                            nextIndex = 0; // Loop back to the start of the playlist
-                        }
-                        playVideo(savedVideos[nextIndex].id, nextIndex);
-                    }
-                    // If there's only 1 video and loop is OFF, it will now just stop playing.
-                }
+                } 
+                // Notice we removed the manual "Autoplay Next" code!
+                // YouTube handles it automatically now, bypassing the background block.
             }
         }
     }
+
 
 
 
