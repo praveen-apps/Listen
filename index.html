@@ -363,33 +363,36 @@
         notify("Loading video...", "var(--text-main)");
     }
 
-    // Detect state changes
+        // Detect state changes
     function onPlayerStateChange(event) {
-        // NEW: Sync our UI when YouTube natively moves to the next song in the background
-        if (event.data === YT.PlayerState.PLAYING && currentPlayingIndex !== -1) {
+        if (currentPlayingIndex !== -1 && savedVideos.length > 0) {
+            const currentVideo = savedVideos[currentPlayingIndex];
             const realIndex = ytPlayer.getPlaylistIndex();
-            // Update our UI if the index changed natively
-            if (realIndex !== -1 && realIndex !== currentPlayingIndex) {
-                currentPlayingIndex = realIndex;
-                renderLibrary(); // Moves the purple highlight to the new song
+
+            // FIX: If the video is looping and YouTube tries to change the index, force it back immediately
+            if (currentVideo.isLooping && realIndex !== -1 && realIndex !== currentPlayingIndex) {
+                ytPlayer.playVideoAt(currentPlayingIndex);
+                return;
+            }
+
+            // Sync our UI highlight when YouTube natively moves to the next song normally
+            if (event.data === YT.PlayerState.PLAYING) {
+                if (realIndex !== -1 && realIndex !== currentPlayingIndex) {
+                    currentPlayingIndex = realIndex;
+                    renderLibrary();
+                }
             }
         }
 
-        if (event.data === YT.PlayerState.ENDED) {
-            if (currentPlayingIndex !== -1 && savedVideos.length > 0) {
-                const currentVideo = savedVideos[currentPlayingIndex];
-                
-                if (currentVideo.isLooping) {
-                    // Feature 1: Replay Repeatedly (Still requires JS, might pause if asleep)
-                    setTimeout(() => {
-                        ytPlayer.loadVideoById(currentVideo.id);
-                    }, 150);
-                } 
-                // Notice we removed the manual "Autoplay Next" code!
-                // YouTube handles it automatically now, bypassing the background block.
+        // Catch the absolute end of the video file
+        if (event.data === YT.PlayerState.ENDED && currentPlayingIndex !== -1 && savedVideos.length > 0) {
+            const currentVideo = savedVideos[currentPlayingIndex];
+            if (currentVideo.isLooping) {
+                ytPlayer.playVideoAt(currentPlayingIndex);
             }
         }
     }
+
 
 
 
